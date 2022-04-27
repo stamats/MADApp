@@ -23,12 +23,11 @@ MADApp is dependent on following packages
 - DT
 - tidyr
 - plotly
-- colourpicker
 - EBImage
 
 They can be installed via
 ```
-install.packages(c("shiny","shinyjs","shinythemes","fs","DT","tidyr","plotly","colourpicker"))
+install.packages(c("shiny","shinyjs","shinythemes","fs","DT","tidyr","plotly"))
 ```
 
 Additionaly, the application requires EBImage package which can not be found on CRAN and should be installed from Bioconductor via

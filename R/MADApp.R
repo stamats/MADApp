@@ -6,7 +6,6 @@ library(fs)
 library(DT)
 library(tidyr)
 library(plotly)
-library(colourpicker)
 
 # UI ---------------------------------------------------------------------------
 ui <- fluidPage(
@@ -26,7 +25,7 @@ ui <- fluidPage(
                                         label = ("Load Image or Sample"), 
                                         choices = list("Load Image" = 1, 
                                                        "Sample" = 2), 
-                                        selected = 2),
+                                        selected = 1),
                            conditionalPanel(
                              condition = "input.upload == 1",
                              fileInput(inputId = 'file1',
@@ -86,22 +85,14 @@ ui <- fluidPage(
                              # ),
                              fileInput(inputId = "gridLabels",
                                        label = "Load Grid Label File"),
+                             textOutput("gridLabelsMsg"),
                              # downloadButton("downloadGrid", "Save Grid Conf"), # It can be adapted to save label file as well.
                              hr(),
-                             textInput("analyteName", label="Analyte name", value="Analyte 1"),
-                             colourInput("color", "Select color", "red"),
+                             textInput("analyteName", label="Analyte name", value=""),
                              actionButton("addAnalyte", "Add Analyte"),
-                             selectInput("gridFill",
-                                          label = ("Choose mode"),
-                                          choices = list("X"=-1,
-                                                         "Eraser"=0,
-                                                         1),
-                                          selected = "1"),
-                             hr(),
-                             radioButtons("gridAnMode",
-                                          "Annotation mode",
-                                          choices = list("numeric" = 1,
-                                                         "nominal" = 2),
+                             selectInput("analyteSelected",
+                                          label = ("Select Analyte"),
+                                          choices = c("Please add analyte"),
                                           selected = 1),
                              hr(),
                              actionButton("segmentation", label = "Apply Segmentation")
@@ -141,11 +132,11 @@ ui <- fluidPage(
                                           selected = "luminance")
                            ),
                            
-                           radioButtons("invert",
-                                        label = ("Spots are darker than background?"),
-                                        choices = list("No" = FALSE,
-                                                       "Yes" = TRUE),
-                                        selected = FALSE),
+                           # radioButtons("invert",
+                           #              label = ("Spots are darker than background?"),
+                           #              choices = list("No" = FALSE,
+                           #                             "Yes" = TRUE),
+                           #              selected = FALSE),
                            
                            radioButtons("thresh", 
                                         label = ("Threshold Method"), 
@@ -166,14 +157,12 @@ ui <- fluidPage(
                            ),
                            
                            conditionalPanel(
-                             condition = "input.thresh == 3",
-                             numericInput(inputId = "tri_offset",
-                                          label = "Offset:",
-                                          value = 0.2,
-                                          min = 0,
-                                          max = 1,
-                                          step = 0.01,
-                                          width = NULL)
+                             condition = "input.thresh == 1",
+                             radioButtons("otsuMode",
+                                          label = "Choose otsu mode",
+                                          choices = list("global" = 1,
+                                                         "local" = 2),
+                                          selected = 1)
                            ),
                            hr(),
                            actionButton("threshold", label = "Apply Threshold"),
@@ -258,8 +247,7 @@ ui <- fluidPage(
               tabPanel("Timeseries plot", value = "plotly",
                        sidebarLayout(
                          sidebarPanel(
-                           h3("Sample tab"),
-                           p("Here goes all inputs, sliders etc.")
+                           selectInput("plotAnalyte", label="Choose Analyte:", choices = "")
                          ),
                          mainPanel(
                            h3("Plot Output"),
@@ -325,9 +313,9 @@ server <- function(input, output, session) {
                                    zoom = NULL, fh=FALSE, fv=FALSE, rot=0, fineRot=0)
   roi <- reactiveValues(image = NULL, cell_w = NULL, cell_h = NULL, cols = NULL, rows = NULL,
                         xmin = NULL, xmax = NULL, ymin = NULL, ymax = NULL, grid = NULL)
-  analytes <- reactiveValues(color = c("red", "red", "red"), 
-                             name = c("Analyte 1", "Analyte 2", "Analyte 3"))
-  gridFill <- list("X"=-1, "Eraser"=0, 1)
+  analytes <- NULL
+  
+  updateSelectInput(session, "analyteSelected", choices=names(analytes))
   
   intensData <- reactiveValues(dates=NULL, dataFrame=NULL)
   
@@ -442,8 +430,10 @@ server <- function(input, output, session) {
     if (shinyImageFile$fv) {
       transformed_image <- EBImage::flop(transformed_image)
     }
-    transformed_image <- EBImage::rotate(transformed_image, (shinyImageFile$rot + shinyImageFile$fineRot), 
-                                         output.dim = dim(transformed_image)[1:2] ,bg.col="white")
+    if (!is.null(transformed_image)) {
+      transformed_image <- EBImage::rotate(transformed_image, (shinyImageFile$rot + shinyImageFile$fineRot), 
+                                         output.dim = dim(transformed_image)[1:2], bg.col="white")
+    }
   }
   
   observeEvent({shinyImageFile$fh
@@ -497,7 +487,7 @@ server <- function(input, output, session) {
 
   plotAndGrid_mainPlot <- function(transformed_image) {
     output$plot1 <- renderPlot({
-      EBImage::display(transformed_image, method = "raster")
+      if (!is.null(transformed_image)) EBImage::display(transformed_image, method = "raster")
       p <- input$plot_brush
       if (!is.null(p)) {
         if (input$selectMode == 2) { # Parallelogram mode
@@ -565,8 +555,8 @@ server <- function(input, output, session) {
       roi$xmax <- p$xmax
       roi$ymin <- p$ymin
       roi$ymax <- p$ymax
-      roi$grid <- matrix(0, nrow=input$rows, ncol=input$cols)
       roi$mode <- input$selectMode
+      roi$grid <- matrix(0, nrow=input$rows, ncol=input$cols)
   
       updateTabsetPanel(session, "tabs", selected = "tab2")
     })
@@ -575,105 +565,85 @@ server <- function(input, output, session) {
 # GRID CONFIGURATION TAB
   
 # Grid configuration -----------------------------------------------------------
-  observeEvent(input$gridConfFile, {
-    load(input$gridConfFile$datapath)
-    roi <<- roi
-    analytes <<- analytes
-  })
+  # observeEvent(input$gridConfFile, {
+  #   load(input$gridConfFile$datapath)
+  #   roi <<- roi
+  #   analytes <<- analytes
+  # })
   
   observeEvent(input$gridLabels, {
     labels <- read.csv(input$gridLabels$datapath, header=FALSE)
-    names <- unique(labels[,2])
-    new_matrix <- matrix(0, nrow=nrow(roi$grid), ncol=ncol(roi$grid))
-    
-    # Remove wrong or extra labels
-    for (row in 1:nrow(labels)){
-      cell <- list()
-      splitted_str <- strsplit(labels[row,1],split="(?<=[a-zA-Z])\\s*(?=[0-9])",perl=TRUE)
-      cell[1] <- splitted_str[[1]][1]
-      cell[2] <- splitted_str[[1]][2]
-      cell <- c(match(cell[1], LETTERS), as.numeric(cell[2]))
-      idx <- match(labels[row,2],names)
-      
-      if (cell[1] > nrow(new_matrix) | cell[2] > ncol(new_matrix)) {
-        labels <- labels[-row,]
+    if (nrow(labels) != nrow(roi$grid) * ncol(roi$grid)) {
+      showNotification("Labels can't be fitted in the grid...", type="error")
+    } else {
+      new_matrix <- matrix(0, nrow=nrow(roi$grid), ncol=ncol(roi$grid))
+      names <- unique(labels[,2])
+      for (row in 1:nrow(labels)){
+        cell <- list()
+        splitted_str <- strsplit(labels[row,1],split="(?<=[a-zA-Z])\\s*(?=[0-9])",perl=TRUE)
+        cell[1] <- splitted_str[[1]][1]
+        cell[2] <- splitted_str[[1]][2]
+        cell <- c(match(cell[1], LETTERS), as.numeric(cell[2]))
+        idx <- match(labels[row,2],names)
+        
+        new_matrix[cell[2],cell[1]] <- idx
       }
+      analytes <<- names
+      roi$grid <- data.frame(new_matrix)
+      updateSelectInput(session, "analyteSelected", choices=analytes, selected=analytes[length(analytes)])
+      updateSelectInput(session, "plotAnalyte", choices=analytes, selected=analytes[length(analytes)])
     }
-    names <- unique(labels[,2])
-    
-    analytes$name <- names
-    analytes$color <- rep("red", length(names))
-    
-    for (i in 1:(length(names)-1)) {
-      gridFill[[length(gridFill)+1]] <<- gridFill[[length(gridFill)]] + 1
-      updateSelectInput(session, "gridFill", selected=gridFill[[length(gridFill)]], choices=gridFill)
-    }
-    
-    for (row in 1:nrow(labels)){
-      cell <- list()
-      splitted_str <- strsplit(labels[row,1],split="(?<=[a-zA-Z])\\s*(?=[0-9])",perl=TRUE)
-      cell[1] <- splitted_str[[1]][1]
-      cell[2] <- splitted_str[[1]][2]
-      cell <- c(match(cell[1], LETTERS), as.numeric(cell[2]))
-      idx <- match(labels[row,2],names)
-      
-      new_matrix[cell[2],cell[1]] <- idx
-    }
-    roi$grid <- data.frame(new_matrix)
   })
   
-  output$downloadGrid <- downloadHandler(
-    filename = "GridConfig.Rdata",
-    content = function(file) {
-      save(roi, analytes, file=file)
-    }
-  )
-  
   observeEvent(input$addAnalyte, {
-    gridFill[[length(gridFill)+1]] <<- gridFill[[length(gridFill)]] + 1
-    analytes$color[as.integer(gridFill[[length(gridFill)]])] <- "red"
-    updateSelectInput(session, "gridFill", selected=gridFill[[length(gridFill)]], choices=gridFill)
+    if (input$analyteName == "") return(0)
+    if (is.na(match(input$analyteName, analytes))) {
+      analytes <<- c(analytes, input$analyteName)
+    } else {
+      showNotification("Analyte already exsist.", type="error")
+    }
+    updateSelectInput(session, "analyteSelected", choices=analytes, selected=analytes[length(analytes)])
   })
   
   # Name and color -------------------------------------------------------------
-  observeEvent(input$color, {
-    if (input$gridFill != "0" && input$gridFill != "-1") {
-      analytes$color[[as.integer(input$gridFill)]] <- input$color
-    }
-  })
+  # observeEvent(input$color, {
+  #   if (input$gridFill != "0" && input$gridFill != "-1") {
+  #     analytes$color[[as.integer(input$gridFill)]] <- input$color
+  #   }
+  # })
 
-  observeEvent(input$analyteName, {
-    if (input$gridFill != "0" && input$gridFill != "-1") {
-      analytes$name[[as.integer(input$gridFill)]] <- input$analyteName
-    }
-  })
+  # observeEvent(input$analyteName, {
+  #   if (input$gridFill != "0" && input$gridFill != "-1") {
+  #     analytes$name[[as.integer(input$gridFill)]] <- input$analyteName
+  #   }
+  # })
   
-  observeEvent(input$gridFill, {
-    if (input$gridFill != "0" && input$gridFill != "-1") {
-      updateTextInput(session, "analyteName", value=analytes$name[as.integer(input$gridFill)])
-      updateColourInput(session, "color", value=analytes$color[as.integer(input$gridFill)])
-    } else {
-      updateTextInput(session, "analyteName", value="")
-      updateColourInput(session, "color", value="red")
-    }
-    session$resetBrush("plot2_brush")
-  })
+  # observeEvent(input$gridFill, {
+  #   if (input$gridFill != "0" && input$gridFill != "-1") {
+  #     updateTextInput(session, "analyteName", value=analytes$name[as.integer(input$gridFill)])
+  #     updateColourInput(session, "color", value=analytes$color[as.integer(input$gridFill)])
+  #   } else {
+  #     updateTextInput(session, "analyteName", value="")
+  #     updateColourInput(session, "color", value="red")
+  #   }
+  #   session$resetBrush("plot2_brush")
+  # })
   
 
 # Interactive grid functions ----------------------------------------------
   observeEvent(input$plot2_click, {
     isolate({
       p <- input$plot2_click
-      
+
       if (!(p$x > roi$xmax) & !(p$x < roi$xmin) & !(p$y > roi$ymax) & !(p$y < roi$ymin)) {
-        
+
         if (roi$mode == 2) { # Parallelogram
           colcuts <- seq(roi$xmin, roi$xmax, length.out = input$cols + 1)
           rowcuts <- seq(roi$ymin, roi$ymax, length.out = input$rows + 2)
-          
+
           ymin <- getLinFunc(colcuts[1], rowcuts[2], colcuts[length(colcuts)], rowcuts[1])(p$x)
           cell_h <- rowcuts[2] - rowcuts[1]
-          
+
           cell_x <- ceiling((p$x - roi$xmin) / roi$cell_w)
           cell_y <- ceiling((p$y - ymin) / cell_h)
           if (cell_y > roi$rows) cell_y <- roi$rows
@@ -681,10 +651,12 @@ server <- function(input, output, session) {
           cell_x <- ceiling((p$x - roi$xmin) / roi$cell_w)
           cell_y <- ceiling((p$y - roi$ymin) / roi$cell_h)
         }
-        roi$grid[cell_y, cell_x] <- input$gridFill
+        if (!is.na(match(input$analyteSelected, analytes))) {
+          roi$grid[cell_y, cell_x] <- match(input$analyteSelected, analytes)
+        }
       }
     })
-  })  
+  })
   
   observeEvent(input$plot2_brush, {
     isolate({
@@ -723,7 +695,9 @@ server <- function(input, output, session) {
         
         for(cell_y in cell_y1:cell_y2) {
           for(cell_x in cell_x1:cell_x2) {
-            roi$grid[cell_y, cell_x] <- input$gridFill
+            if (!is.na(match(input$analyteSelected, analytes))) {
+              roi$grid[cell_y, cell_x] <- match(input$analyteSelected, analytes)
+            }
           }
         }
       }
@@ -771,16 +745,13 @@ server <- function(input, output, session) {
                                     colcuts[length(colcuts)], rowcuts[cell_y])(colcuts[cell_x])
                 
                 # Annotation
-                if (input$gridAnMode == 2) {
-                  anno <- analytes$name[as.integer(roi$grid[cell_y, cell_x])]
-                  anno_adj <- c(-0.1, 1.5)
-                } else {
-                  anno <- roi$grid[cell_y, cell_x]
-                  anno_adj <- c(-0.5, 1.5)
-                }
+                anno <- roi$grid[cell_y, cell_x]
+                anno_adj <- c(-0.5, 1.5)
+
+                if (analytes[anno] == input$analyteSelected) color <- "blue" else color <- "red"
                 
                 text(x=colcuts[cell_x], y=y_pos, adj=anno_adj,
-                     label=anno, col=analytes$color[as.integer(roi$grid[cell_y, cell_x])])
+                     label=anno, col=color)
               }
             }
           }
@@ -813,15 +784,13 @@ server <- function(input, output, session) {
                       y=c(rowcuts[cell_y] + roi$cell_h, rowcuts[cell_y]), col="red")
               } else if (roi$grid[cell_y, cell_x] != 0) {
                 # Annotation
-                if (input$gridAnMode == 2) {
-                  anno <- analytes$name[as.integer(roi$grid[cell_y, cell_x])]
-                  anno_adj <- c(0, 1.5)
-                } else {
-                  anno <- roi$grid[cell_y, cell_x]
-                  anno_adj <- c(-0.5, 1.5)
-                }
+                anno <- roi$grid[cell_y, cell_x]
+                anno_adj <- c(-0.5, 1.)
+                
+                if (analytes[anno] == input$analyteSelected) color <- "blue" else color <- "red"
+
                 text(x=colcuts[cell_x], y=rowcuts[cell_y], adj=anno_adj,
-                     label=anno, col=analytes$color[as.integer(roi$grid[cell_y, cell_x])])
+                     label="•", col=color, cex=1.5)
               }
             }
           }
@@ -838,7 +807,8 @@ server <- function(input, output, session) {
     })
   }
   
-  observeEvent(roi$grid, {
+  observeEvent({roi$image 
+                roi$grid}, {
     plotAndGrid_gridConfig("plot2", roi$image)
   })
   
@@ -964,21 +934,31 @@ server <- function(input, output, session) {
     seg.list <- segmentation_list
     seg.list <- fix_subimages(seg.list)
     op <- par(no.readonly = TRUE)
+    
+    # Otsu
     if(input$thresh == 1){
       Background.Threshold <- matrix(ncol=roi$cols,nrow=roi$rows)
+      img_final <- transform_image(shinyImageFile$img_origin)
+      if (colorMode(img_final) > 0) {
+        img_final <- 1 - channel(img_final, input$channel) 
+      }
+      thr <- otsu(img_final)
       concat_img1 <- NULL
       for(y in 1:roi$rows){
         row_segment <- NULL
         for(x in 1:roi$cols){
           img <- seg.list[[y]][[x]]
           if (roi$grid[y,x] != -1) {
+            # if(input$invert) {
+            #   img <- 1 - img
+            # }
             if(colorMode(img) > 0){
               img <- 1-channel(img, input$channel)
             }
-            if(input$invert) {
-              img <- 1 - img
+            if (input$otsuMode == 2) {
+              thr <- otsu(img)
             }
-            Background.Threshold[y,x] <- otsu(img)
+            Background.Threshold[y,x] <- thr
             signal <- imageData(img) > Background.Threshold[y,x]
           } else {
             Background.Threshold[y,x] <- NA
@@ -990,7 +970,6 @@ server <- function(input, output, session) {
       }
       if (display_plots) output$plot3 <- renderPlot({display(concat_img1, method="raster")})
       threshData$Threshold <- Background.Threshold
-
       threshData$Mean_Intensities <- matrix(NA, ncol=input$cols, nrow=input$rows)
       threshData$Median_Intensities <- matrix(NA, ncol=input$cols, nrow=input$rows)
 
@@ -1003,10 +982,12 @@ server <- function(input, output, session) {
             if(colorMode(img) > 0){
               img <- 1-channel(img, input$channel)
             }
-            if(input$invert) {
-              img <- 1 - img
+            # if(input$invert) {
+            #   img <- 1 - img
+            # }
+            if (input$otsuMode == 2) {
+              thr <- otsu(img)
             }
-            thr <- otsu(img)
             signal <- imageData(img) > thr
             imageData(img) <- (imageData(img) - thr)*signal
             threshData$Mean_Intensities[y,x] <- mean(imageData(img)[signal], na.rm = TRUE)
@@ -1022,6 +1003,8 @@ server <- function(input, output, session) {
       }
       if (display_plots) output$plot4 <- renderPlot({display(concat_img2, method="raster")})
     }
+    
+    # Quantile
     if(input$thresh == 2){
       Background <- vector(mode= "list", length=roi$cols*roi$rows)
       count <- 0
@@ -1047,9 +1030,9 @@ server <- function(input, output, session) {
             if(colorMode(img) > 0){
               img <- 1-channel(img, input$channel)
             }
-            if(input$invert) {
-              img <- 1 - img
-            }
+            # if(input$invert) {
+            #   img <- 1 - img
+            # }
             signal <- imageData(img) > Background.Threshold
           } else {
             signal <- matrix(0, nrow=nrow(imageData(img)), ncol=ncol(imageData(img)))
@@ -1072,9 +1055,9 @@ server <- function(input, output, session) {
             if(colorMode(img) > 0){
               img <- 1-channel(img, input$channel)
             }
-            if(input$invert) {
-              img <- 1 - img
-            }
+            # if(input$invert) {
+            #   img <- 1 - img
+            # }
             signal <- imageData(img) > Background.Threshold
             imageData(img) <- (imageData(img) - Background.Threshold)*signal
             threshData$Mean_Intensities[y,x] <- mean(imageData(img)[signal])
@@ -1128,8 +1111,9 @@ server <- function(input, output, session) {
                        BG.method,
                        check.names = FALSE)
     }
+    
     # Assign names of analytes
-    Ana <- sapply(unlist(roi$grid), function(x) {if (x!="-1" && x!="0") analytes$name[as.numeric(x)] else NA})
+    Ana <- sapply(unlist(roi$grid), function(x) {if (x!="-1" & x!="0") analytes[as.numeric(x)] else NA})
     
     Mean <- as.vector(threshData$Mean_Intensities)
     Median <- as.vector(threshData$Median_Intensities)
@@ -1336,12 +1320,14 @@ server <- function(input, output, session) {
     p_lines
   }
   
-  observeEvent(input$plotme, {
+  observeEvent(input$plotAnalyte, {
     isolate({
-      updateTabsetPanel(session, "tabs", selected = "plotly")
+      # updateTabsetPanel(session, "tabs", selected = "plotly")
       
       output$plotly <- plotly::renderPlotly({
-        coor <- input$checkerboard_cells_selected
+        analyte_idx <- match(input$plotAnalyte, analytes)
+        coor <- which(roi$grid == analyte_idx, arr.ind = TRUE)
+        # coor <- input$checkerboard_cells_selected
         validate(need(!is.na(coor[1]), "Please select a cell on previous tab."))
         validate(need(!any(coor==0), "ERROR: Invalid cell selected."))  
         p_lines <- generatePlotLines(intensData$dates, coor, input$param) 
@@ -1353,7 +1339,8 @@ server <- function(input, output, session) {
         x <- factor(names(intensData$dates))
         data <- data.frame(data)
         data <- cbind(x,data)
-        
+        data <- data[order(data$x),] # Sorts the date entries.
+
         
         fig <- plot_ly(type="scatter")
         
@@ -1366,7 +1353,8 @@ server <- function(input, output, session) {
           title = "Timeline",
           showticklabels = TRUE,
           tickangle = 45,
-          exponentformat = "E"
+          exponentformat = "E",
+          tickformat="%d/%m/%Y"
         )
         
         y <- list(
