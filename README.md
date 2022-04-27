@@ -5,12 +5,6 @@ The repository includes the development version of shiny application MADApp
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
 [![Project Status: WIP – Initial development is in progress, but there has not yet been a stable, usable release suitable for the public.](https://www.repostatus.org/badges/latest/wip.svg)](https://www.repostatus.org/#wip)
 
-## Testing version of the app (shinyapps.io)
-
-Our app can be tested on shinyapps.io. 
-
-https://lfapp.shinyapps.io/madapp/
-
 
 ## Installation
 
