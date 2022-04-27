@@ -1,0 +1,14 @@
+name: protein_array
+title: protein_array
+username:
+account: lfapp
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 4217404
+bundleId: 5813582
+url: https://lfapp.shinyapps.io/protein_array/
+when: 1650373606.03149
+lastSyncTime: 1650373606.0315
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: labels.csv|sample_arrays/array1.png|sample_arrays/array2.png|sample_arrays/array3.png|sample_arrays/array4.png|sample_arrays/array5.png
