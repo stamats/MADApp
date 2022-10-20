@@ -241,7 +241,7 @@ ui <- fluidPage(
                                                       "threshold" = "thresh",
                                                       "valid",
                                                       "false positives" = "falseP")),
-                           actionButton("plotme", "Plot timeseries"),
+                           selectInput("showAnalyte", label = "Choose Analyte:", choices = ""),
                            tags$style(type = "text/css", "#plotme { display: block; width:50%;}"),
                            br(),
                            br(),
