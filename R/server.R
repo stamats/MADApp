@@ -311,6 +311,8 @@ server <- function(input, output, session) { # nolint
                         selected=shiny_image_file$analytes[length(shiny_image_file$analytes)])
       updateSelectInput(session, "plotAnalyte", choices=shiny_image_file$analytes, 
                         selected=shiny_image_file$analytes[length(shiny_image_file$analytes)])
+      updateSelectInput(session, "showAnalyte", choices=shiny_image_file$analytes, 
+                        selected=shiny_image_file$analytes[1])
     })
   })
 
@@ -718,8 +720,8 @@ server <- function(input, output, session) { # nolint
             }
             signal <- imageData(img) > thr
             imageData(img) <- (imageData(img) - thr)*signal
-            threshData$Mean_Intensities[y,x] <- mean(imageData(img), na.rm = TRUE)
-            threshData$Median_Intensities[y,x] <- median(imageData(img), na.rm = TRUE)
+            threshData$Mean_Intensities[y,x] <- mean(imageData(img)[signal], na.rm = TRUE)
+            threshData$Median_Intensities[y,x] <- median(imageData(img)[signal], na.rm = TRUE)
             threshData$Valid_Pixels[y,x] <- sum(signal) / (dim(signal)[1] * dim(signal)[2])
             threshData$False_Positives[y,x] <- threshData$Valid_Pixels[y,x] < input$falseP_thresh & threshData$Valid_Pixels[y,x] > 0
           } else {
@@ -1061,11 +1063,16 @@ server <- function(input, output, session) { # nolint
         rownames(table1) <- 1:nrow(table1)
         table1 <- signif(table1, 3)
         datatable(data=table1, options=list(pageLength=dim(table1)[1]),
-                  selection = list(target = 'cell'))
-      })
+                  selection = list(target = 'cell', selectable=FALSE))
+        })
     }
   })
-    
+  
+  observe({
+    AnalyteCells <- which(roi$grid == match(input$showAnalyte, shiny_image_file$analytes), arr.ind=TRUE)
+    selectCells(dataTableProxy("checkerboard"), selected=AnalyteCells, ignore.selectable = TRUE)
+  })
+  
   generatePlotLines <- function(table_list, coor, param) {
     p_lines <- list()
     for(n in sort(names(table_list))){
