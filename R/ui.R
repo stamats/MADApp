@@ -145,9 +145,9 @@ ui <- fluidPage(
                              condition = "input.thresh == 1",
                              radioButtons("otsuMode",
                                           label = "Choose otsu mode",
-                                          choices = list("global" = 1,
-                                                         "local" = 2),
-                                          selected = 1)
+                                          choices = list("local" = 2,
+                                                         "global" = 1),
+                                          selected = 2)
                            ),
                            hr(),
                            actionButton("threshold", label = "Apply Threshold"),
