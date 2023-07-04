@@ -43,6 +43,20 @@ fix_subimages <- function(img_grid) {
   img_grid
 }
 
+gen_mask <- function(img_matrix) {
+  euclidean_dis <- function(p1, p2) {
+    sqrt((p1[1]-p2[1])^2 + (p1[2]-p2[2])^2)
+  }
+  tmp_mat <- matrix(0, nrow=nrow(img_matrix), ncol=ncol(img_matrix))
+  c <- nrow(tmp_mat)/2
+  for (i in 1:nrow(tmp_mat)) {
+    for (j in 1:ncol(tmp_mat)) {
+      tmp_mat[j,i] <- euclidean_dis(c(j,i), c(c, c))
+    }
+  }
+  tmp_mat
+}
+
 # SERVER -----------------------------------------------------------------------
 server <- function(input, output, session) { # nolint
 
@@ -822,8 +836,8 @@ server <- function(input, output, session) { # nolint
 
   inputData <- function(imageName, threshData, exclude_false) {
     if (exclude_false) {
-      intens_data$dates[[paste0(input$testdate)]][["mean"]] <- ifelse(threshData$False_Positives, 0, threshData$Mean_Intensities)
-      intens_data$dates[[paste0(input$testdate)]][["median"]] <- ifelse(threshData$False_Positives, 0, threshData$Median_Intensities)
+      intens_data$dates[[paste0(input$testdate)]][["mean"]] <- ifelse(threshData$False_Positives, NA, threshData$Mean_Intensities)
+      intens_data$dates[[paste0(input$testdate)]][["median"]] <- ifelse(threshData$False_Positives, NA, threshData$Median_Intensities)
     } else {
       intens_data$dates[[paste0(input$testdate)]][["mean"]] <- threshData$Mean_Intensities
       intens_data$dates[[paste0(input$testdate)]][["median"]] <- threshData$Median_Intensities
@@ -867,8 +881,8 @@ server <- function(input, output, session) { # nolint
     Ana <- sapply(unlist(roi$grid), function(x) {if (x!="-1" & x!="0") shiny_image_file$analytes[as.numeric(x)] else NA})
     
     if (exclude_false) {
-      Mean <- as.vector(ifelse(threshData$False_Positives, 0, threshData$Mean_Intensities))
-      Median <- as.vector(ifelse(threshData$False_Positives, 0, threshData$Median_Intensities))
+      Mean <- as.vector(ifelse(threshData$False_Positives, NA, threshData$Mean_Intensities))
+      Median <- as.vector(ifelse(threshData$False_Positives, NA, threshData$Median_Intensities))
     } else {
       Mean <- as.vector(threshData$Mean_Intensities)
       Median <- as.vector(threshData$Median_Intensities)
