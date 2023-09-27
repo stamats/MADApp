@@ -1,5 +1,5 @@
 
-# <img src="https://github.com/fpaskali/MADApp/blob/main/hex-MADApp.png" alt="LFApp" width="120"/> &emsp; MADApp
+# <img src="https://github.com/fpaskali/MADApp/blob/main/hex-MADApp.png" alt="MADApp" width="150"/> MADApp
 The repository includes the development version of shiny application MADApp
 
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
